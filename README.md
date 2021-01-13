@@ -2,19 +2,20 @@
 
 ## Take-Away
 
-笔者使用 PyTorch 编写了不同加速库在 ImageNet 上的使用示例（单机多卡），需要的同学可以当作 quickstart 将需要的部分 copy 到自己的项目中（Github 请点击下面链接）：
+注意：本代码仓库来源于：**Here(https://github.com/tczhangzhi/pytorch-distributed)**, 这里主要是修正了若干错误并更改ImageNet为可以自动下来的CIFAR10数据集。
+1. apex使用的时候的使用class data_prefetcher的bug，去掉对data_prefetcher的使用，并更改为简单的对train_loader或者val_loader的enumerate循环；
+2. 使用horovod的时候的bug，因为horovod.pytorch的allreduce方法已经自带average，所以不需要再次除以nprocs.
+3. 增加了bash文件，用于分别运行五个并行化示例代码。
 
-1. **[nn.DataParallel ](https://github.com/tczhangzhi/pytorch-distributed/blob/master/dataparallel.py) 简单方便的 nn.DataParallel**
-2. **[torch.distributed](https://github.com/tczhangzhi/pytorch-distributed/blob/master/distributed.py) 使用 torch.distributed 加速并行训练**
-3. **[torch.multiprocessing](https://github.com/tczhangzhi/pytorch-distributed/blob/master/multiprocessing_distributed.py) 使用 torch.multiprocessing 取代启动器**
-4. **[apex](https://github.com/tczhangzhi/pytorch-distributed/blob/master/apex_distributed.py) 使用 apex 再加速**
-5. **[horovod](https://github.com/tczhangzhi/pytorch-distributed/blob/master/horovod_distributed.py)** **horovod 的优雅实现**
-6. **[slurm](https://github.com/tczhangzhi/pytorch-distributed/blob/master/distributed_slurm_main.py) GPU 集群上的分布式**
-7. **补充：分布式 [evaluation](https://github.com/tczhangzhi/pytorch-distributed/blob/master/distributed.py)**
+笔者使用 PyTorch 编写了不同加速库在 (NO) ImageNet-> (YES) CIFAR10 上的使用示例（单机多卡），需要的同学可以当作 quickstart 将需要的部分 copy 到自己的项目中（Github 请点击下面链接）：
 
-这里，笔者记录了使用 4 块 Tesla V100-PICE 在 ImageNet 进行了运行时间的测试，测试结果发现 **Apex 的加速效果最好，但与 Horovod/Distributed 差别不大**，平时可以直接使用内置的 Distributed。**Dataparallel 较慢，不推荐使用**。（后续会补上 V100/K80 上的测试结果，穿插了一些试验所以中断了）
-
-![img](https://pic3.zhimg.com/80/v2-9c129a594c73aa8f2085dd17701de0e2_hd.jpg)
+1. **[nn.DataParallel ](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/1.dataparallel.py) 简单方便的 nn.DataParallel**
+2. **[torch.distributed](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/2.distributed.py) 使用 torch.distributed 加速并行训练**
+3. **[torch.multiprocessing](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/3.multiprocessing_distributed.py) 使用 torch.multiprocessing 取代启动器**
+4. **[apex](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/4.apex_distributed2.py) 使用 apex （fp16半精度）再加速**
+5. **[horovod](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/5.horovod_distributed.py)** **horovod 的优雅实现**
+6. **[slurm](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/6.distributed_slurm_main.py) GPU 集群上的分布式（Not Tested Yet! 2021/Jan/13）**
+7. **补充：分布式 [evaluation](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/2.distributed.py)**
 
 简要记录一下不同库的分布式训练方式：
 
