@@ -77,7 +77,7 @@ def reduce_mean(tensor, nprocs):
     return rt
 
 
-class data_prefetcher():
+class data_prefetcher(): # TODO do not use this class, something is wrong!
     def __init__(self, loader):
         self.loader = iter(loader)
         self.stream = torch.cuda.Stream()
@@ -216,7 +216,7 @@ def main_worker(local_rank, nprocs, args):
         return
 
     for epoch in range(args.start_epoch, args.epochs):
-        train_sampler.set_epoch(epoch)
+        train_sampler.set_epoch(epoch) # 从而每次epoch的时候，数据重新被shuffle
         val_sampler.set_epoch(epoch)
 
         adjust_learning_rate(optimizer, epoch, args)
@@ -271,7 +271,7 @@ def train(train_loader, model, criterion, optimizer, epoch, local_rank, args):
         # measure accuracy and record loss
         acc1, acc5 = accuracy(output, target, local_rank, topk=(1, 5))
 
-        torch.distributed.barrier()
+        torch.distributed.barrier() # 同步点
 
         reduced_loss = reduce_mean(loss, args.nprocs)
         reduced_acc1 = reduce_mean(acc1, args.nprocs)
