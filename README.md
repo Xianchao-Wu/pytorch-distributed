@@ -302,6 +302,29 @@ $ pip install -v --disable-pip-version-check --no-cache-dir --global-option="--c
 ```
 按照官网上的上面三个命令，其实是在基于nvcc重新编译。我遇到的坑就是：nvcc的cuda版本和pytorch的cuda版本不一致！（查了半天才知道，apex除了莫名其妙的error提示，并没有帮忙精准定位这个bug):
 
+查看nvcc的cuda版本：
+```
+nvcc --v
+ersion
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2019 NVIDIA Corporation
+Built on Sun_Jul_28_19:07:16_PDT_2019
+Cuda compilation tools, release 10.1, V10.1.243
+```
+查看pytorch的cuda版本：
+```
+python
+Python 3.6.12 |Anaconda, Inc.| (default, Sep  8 2020, 23:10:56)
+[GCC 7.3.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import torch
+>>> torch.version.cuda
+'10.1'
+```
+可以看到，目前两者都是10.1，安装apex0.1版本成功(2021/Jan/12)。另外一个事情是，cuda分成两个api，一个是运行时支持compile的，版本10.1.243，另外，如果使用nvidia-smi，看到的可能是>=10.1的版本(例如CUDA11)，这第二个是驱动GPU的，只要保证版本>= nvcc的版本即可。
+
+当nvcc和pytorch的cuda版本不一致的时候，一则可以新安装cuda并修改nvcc的版本，二则可以在[pytorch安装界面](https://pytorch.org/get-started/locally/)，寻找和nvcc的版本一致的安装命令，reinstall pytorch(更简单一些）。
+
 
 
 在混合精度训练上，Apex 的封装十分优雅。直接使用 amp.initialize 包装模型和优化器，apex 就会自动帮助我们管理模型参数和优化器的精度了，根据精度需求不同可以传入其他配置参数。
