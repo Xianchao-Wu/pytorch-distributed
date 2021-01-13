@@ -2,9 +2,9 @@
 
 ## Take-Away
 
-注意：本代码仓库来源于：**[Here](https://github.com/tczhangzhi/pytorch-distributed)**, 这里主要是修正了若干错误并更改ImageNet为可以自动下载的CIFAR10数据集。
-1. apex使用的时候的使用class data_prefetcher的bug，去掉对data_prefetcher的使用，并更改为简单的对train_loader或者val_loader的enumerate循环；
-2. 使用horovod的时候的bug，因为horovod.pytorch的allreduce方法已经自带average，所以不需要再次除以nprocs.
+Note: The code mainly comes from：**[Here](https://github.com/tczhangzhi/pytorch-distributed)**, I fixed some bugs here and changed the dataset from ImageNet to CIFAR10 which can be easily downloaded:
+1. fix the bug of apex when using ```class data_prefetcher```，remove the usage of ```data_prefetcher```，and changed to a easilier enumerate loop of using ```train_loader``` or ```val_loader```；
+2. fix a bug of using horovod's all-reduce，since horovod.pytorch's allreduce method already includes average，it is not necessary to devidied by ```nprocs``` again.
 3. 增加了bash文件，用于分别运行五个并行化示例代码。
 
 笔者使用 PyTorch 编写了不同加速库在 (NO) ImageNet-> (YES) CIFAR10 上的使用示例（单机多卡，DGX-1上测试：两个配置，8卡16GB V100，以及4卡16GB V100），需要的同学可以当作 quickstart 将需要的部分 copy 到自己的项目中（Github 请点击下面链接）：
