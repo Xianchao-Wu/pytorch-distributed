@@ -2,7 +2,7 @@
 
 ## Take-Away
 
-注意：本代码仓库来源于：**Here(https://github.com/tczhangzhi/pytorch-distributed)**, 这里主要是修正了若干错误并更改ImageNet为可以自动下来的CIFAR10数据集。
+注意：本代码仓库来源于：**[Here](https://github.com/tczhangzhi/pytorch-distributed)**, 这里主要是修正了若干错误并更改ImageNet为可以自动下来的CIFAR10数据集。
 1. apex使用的时候的使用class data_prefetcher的bug，去掉对data_prefetcher的使用，并更改为简单的对train_loader或者val_loader的enumerate循环；
 2. 使用horovod的时候的bug，因为horovod.pytorch的allreduce方法已经自带average，所以不需要再次除以nprocs.
 3. 增加了bash文件，用于分别运行五个并行化示例代码。
@@ -19,14 +19,15 @@
 
 简要记录一下不同库的分布式训练方式：
 
-## 简单方便的 nn.DataParallel
+## 简单方便的 torch.nn.DataParallel
 
 > DataParallel 可以帮助我们（使用单进程控）将模型和数据加载到多个 GPU 中，控制数据在 GPU 之间的流动，协同不同 GPU 上的模型进行并行训练（细粒度的方法有 scatter，gather 等等）。
 
 DataParallel 使用起来非常方便，我们只需要用 DataParallel 包装模型，再设置一些参数即可。需要定义的参数包括：参与训练的 GPU 有哪些，device_ids=gpus；用于汇总梯度的 GPU 是哪个，output_device=gpus[0] 。DataParallel 会自动帮我们将数据切分 load 到相应 GPU，将模型复制到相应 GPU，进行正向传播计算梯度并汇总：
 
 ```
-model = nn.DataParallel(model.cuda(), device_ids=gpus, output_device=gpus[0])
+model = nn.DataParallel(model.cuda(), 
+   device_ids=gpus, output_device=gpus[0])
 ```
 
 值得注意的是，模型和数据都需要先 load 进 GPU 中，DataParallel 的 module 才能对其进行处理，否则会报错：
@@ -56,7 +57,7 @@ for epoch in range(100):
 import torch
 import torch.distributed as dist
 
-gpus = [0, 1, 2, 3]
+gpus = [0, 1, 2, 3] # TODO need to be updated based on real-world gpu numbers
 torch.cuda.set_device('cuda:{}'.format(gpus[0]))
 
 train_dataset = ...
@@ -64,7 +65,8 @@ train_dataset = ...
 train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=...)
 
 model = ...
-model = nn.DataParallel(model.to(device), device_ids=gpus, output_device=gpus[0])
+model = nn.DataParallel(model.to(device), 
+   device_ids=gpus, output_device=gpus[0])
 
 optimizer = optim.SGD(model.parameters())
 
@@ -87,13 +89,13 @@ for epoch in range(100):
 python main.py
 ```
 
-在 ImageNet 上的完整训练代码，请点击[Github](https://link.zhihu.com/?target=https%3A//github.com/tczhangzhi/pytorch-distributed/blob/master/dataparallel.py)。
+在 CIFAR10上的完整训练代码，请点击[Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/1.dataparallel.py)。
 
 ## 使用 torch.distributed 加速并行训练
 
 > 在 pytorch 1.0 之后，官方终于对分布式的常用方法进行了封装，支持 all-reduce，broadcast，send 和 receive 等等。通过 MPI 实现 CPU 通信，通过 NCCL 实现 GPU 通信。官方也曾经提到用 DistributedDataParallel 解决 DataParallel 速度慢，GPU 负载不均衡的问题，目前已经很成熟了～
 
-与 DataParallel 的单进程控制多 GPU 不同，在 distributed 的帮助下，我们只需要编写一份代码，torch 就会自动将其分配给 ![[公式]](https://www.zhihu.com/equation?tex=n) 个进程，分别在 ![[公式]](https://www.zhihu.com/equation?tex=n) 个 GPU 上运行。
+与 DataParallel 的单进程控制多 GPU 不同，在 distributed 的帮助下，我们只需要编写一份代码，torch 就会自动将其分配给每个进程，分别在每个 GPU 上运行。
 
 在 API 层面，pytorch 为我们提供了 torch.distributed.launch 启动器，用于在命令行分布式地执行 python 文件。在执行过程中，启动器会将当前进程的（其实就是 GPU的）index 通过参数传递给 python，我们可以这样获得当前进程的 index：
 
@@ -190,7 +192,7 @@ for epoch in range(100):
 CUDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.launch --nproc_per_node=4 main.py
 ```
 
-在 ImageNet 上的完整训练代码，请点击[Github](https://link.zhihu.com/?target=https%3A//github.com/tczhangzhi/pytorch-distributed/blob/master/distributed.py)。
+在 CIFAR10 上的完整训练代码，请点击[Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/2.distributed.py)。
 
 ## 使用 torch.multiprocessing 取代启动器
 
@@ -285,7 +287,7 @@ def main_worker(proc, nprocs, args):
 python main.py
 ```
 
-在 ImageNet 上的完整训练代码，请点击[Github](https://link.zhihu.com/?target=https%3A//github.com/tczhangzhi/pytorch-distributed/blob/master/multiprocessing_distributed.py)。
+在 CIFAR10 上的完整训练代码，请点击[Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/3.multiprocessing_distributed.py)。
 
 ## 使用 Apex 再加速
 
@@ -365,7 +367,7 @@ for epoch in range(100):
 UDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.launch --nproc_per_node=4 main.py
 ```
 
-在 ImageNet 上的完整训练代码，请点击[Github](https://link.zhihu.com/?target=https%3A//github.com/tczhangzhi/pytorch-distributed/blob/master/apex_distributed.py)。
+在 CIFAR10 上的完整训练代码，请点击[Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/4.apex_distributed2.py)。
 
 ## Horovod 的优雅实现
 
@@ -373,7 +375,7 @@ UDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.launch --nproc_per_node=
 
 在 API 层面，Horovod 和 torch.distributed 十分相似。在 mpirun 的基础上，Horovod 提供了自己封装的 horovodrun 作为启动器。
 
-与 torch.distributed.launch 相似，我们只需要编写一份代码，horovodrun 启动器就会自动将其分配给 ![[公式]](https://www.zhihu.com/equation?tex=n) 个进程，分别在 ![[公式]](https://www.zhihu.com/equation?tex=n) 个 GPU 上运行。在执行过程中，启动器会将当前进程的（其实就是 GPU的）index 注入 hvd，我们可以这样获得当前进程的 index：
+与 torch.distributed.launch 相似，我们只需要编写一份代码，horovodrun 启动器就会自动将其分配给每个进程，分别在每个 GPU 上运行。在执行过程中，启动器会将当前进程的（其实就是 GPU的）index 注入 hvd，我们可以这样获得当前进程的 index：
 
 ```
 import horovod.torch as hvd
@@ -468,7 +470,7 @@ for epoch in range(100):
 CUDA_VISIBLE_DEVICES=0,1,2,3 horovodrun -np 4 -H localhost:4 --verbose python main.py
 ```
 
-在 ImageNet 上的完整训练代码，请点击[Github](https://link.zhihu.com/?target=https%3A//github.com/tczhangzhi/pytorch-distributed/blob/master/horovod_distributed.py)。
+在 CIFAR10 上的完整训练代码，请点击[Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/5.horovod_distributed.py)。
 
 ## GPU 集群上的分布式
 
@@ -582,7 +584,7 @@ def main_worker(gpu, ngpus_per_node, args):
 srun -N2 --gres gpu:1 python distributed_slurm_main.py --dist-file dist_file
 ```
 
-在 ImageNet 上的完整训练代码，请点击[Github](https://github.com/tczhangzhi/pytorch-distributed/blob/master/distributed_slurm_main.py)。
+在 ImageNet 上的完整训练代码，请点击[Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/6.distributed_slurm_main.py)。
 
 ## 分布式 evaluation
 
@@ -646,7 +648,7 @@ top5.update(acc5.item(), images.size(0))
 def reduce_mean(tensor, world_size):
     rt = tensor.clone()
     hvd.allreduce(rt, name='barrier')
-    rt /= world_size
+    #rt /= world_size # attention: do not /= world_size here! since allreduce already includes average!
     return rt
     
 output = model(images)
