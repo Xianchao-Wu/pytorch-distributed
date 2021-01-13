@@ -472,6 +472,9 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 horovodrun -np 4 -H localhost:4 --verbose python ma
 
 在 CIFAR10 上的完整训练代码，请点击[Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/5.horovod_distributed.py)。
 
+另外，在MNIST上的完整训练代码，请点击[Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/5.2.horovod_pytorch_mnist.py)，运行这个py的bash，请点击[Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/5.2.run.mnist.sh)。
+
+
 ## GPU 集群上的分布式
 
 > Slurm，是一个用于 Linux 系统的免费、开源的任务调度工具。它提供了三个关键功能。第一，为用户分配资源(计算机节点)，以供用户执行工作。第二，它提供了一个框架，用于执行在节点上运行着的任务(通常是并行的任务)，第三，为任务队列合理地分配资源。如果你还没有部署 Slurm 可以按照笔者总结的[部署教程](https://zhuanlan.zhihu.com/p/149771261)进行部署。
