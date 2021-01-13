@@ -24,7 +24,9 @@ model_names = sorted(name for name in models.__dict__
                      if name.islower() and not name.startswith("__") and callable(models.__dict__[name]))
 
 parser = argparse.ArgumentParser(description='PyTorch cifar10 (not ImageNet) Training')
-parser.add_argument('--data', metavar='DIR', default='/raid/xianchaow/pytorch-distributed/data/cifar10', help='path to dataset')
+parser.add_argument('--data', metavar='DIR', default='/raid/xianchaow/pytorch-distributed/data/cifar10', help='path to dataset') 
+# TODO change 'default' to your own path
+
 parser.add_argument('-a',
                     '--arch',
                     metavar='ARCH',
@@ -67,7 +69,7 @@ parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true', he
 parser.add_argument('--pretrained', dest='pretrained', action='store_true', help='use pre-trained model')
 parser.add_argument('--seed', default=None, type=int, help='seed for initializing training. ')
 
-best_acc1 = 0
+best_acc1 = 0 # record global best accuracy
 
 
 def main():
@@ -84,7 +86,7 @@ def main():
                       'from checkpoints.')
 
     #gpus = [0, 1, 2, 3, 4, 5, 6, 7] # use all the 8 gpu cards
-    gpus = [0, 1, 2, 3] #, 4, 5, 6, 7] # use all the 8 gpu cards
+    gpus = [0, 1, 2, 3] #, 4, 5, 6, 7] # use all the 8 gpu cards, TODO config based on your own machine
     main_worker(gpus=gpus, args=args)
 
 
@@ -99,19 +101,21 @@ def main_worker(gpus, args):
         print("=> creating model '{}'".format(args.arch))
         model = models.__dict__[args.arch]()
 
-    torch.cuda.set_device('cuda:{}'.format(gpus[0]))
-    model.cuda()
+    torch.cuda.set_device('cuda:{}'.format(gpus[0])) # set current default gpu=gpu:0
+    model.cuda() # send model to the default gpu:0
     # When using a single GPU per process and per
     # DistributedDataParallel, we need to divide the batch size
     # ourselves based on the total number of GPUs we have
     model = nn.DataParallel(model, device_ids=gpus, output_device=gpus[0]) # point.1 TODO
+    # broadcast the model from gpu:0 to other gpus and after optimizing, all-reduce the gradient information
+    # from all other gpus to gpu:0
 
     # define loss function (criterion) and optimizer
     criterion = nn.CrossEntropyLoss()
 
     optimizer = torch.optim.SGD(model.parameters(), args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
-    cudnn.benchmark = True
+    cudnn.benchmark = True # just for cudnn's CNN implementation selection (auto)
 
     # Data loading code
     traindir = os.path.join(args.data, 'train')
