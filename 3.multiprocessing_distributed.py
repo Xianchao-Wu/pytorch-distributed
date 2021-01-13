@@ -25,6 +25,8 @@ model_names = sorted(name for name in models.__dict__
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
 parser.add_argument('--data', metavar='DIR', default='/raid/xianchaow/pytorch-distributed/data/cifar10', help='path to dataset')
+# TODO modify the default path here!
+
 parser.add_argument('-a',
                     '--arch',
                     metavar='ARCH',
@@ -71,7 +73,7 @@ parser.add_argument('--seed', default=None, type=int, help='seed for initializin
 def reduce_mean(tensor, nprocs):
     rt = tensor.clone()
     dist.all_reduce(rt, op=dist.ReduceOp.SUM)
-    rt /= nprocs
+    rt /= nprocs # this average is necessary!
     return rt
 
 
@@ -79,11 +81,11 @@ def main():
     args = parser.parse_args()
     args.nprocs = torch.cuda.device_count() # 自动获取可用的gpu card的数量！
 
-    mp.spawn(main_worker, nprocs=args.nprocs, args=(args.nprocs, args))
+    mp.spawn(main_worker, nprocs=args.nprocs, args=(args.nprocs, args)) # 产卵线程！
 
 
 def main_worker(local_rank, nprocs, args):
-    args.local_rank = local_rank
+    args.local_rank = local_rank #当前gpu的rank, such as 0, or 1 or 2...
     
     if args.seed is not None:
         random.seed(args.seed)
@@ -97,7 +99,9 @@ def main_worker(local_rank, nprocs, args):
 
     best_acc1 = .0
 
-    dist.init_process_group(backend='nccl', init_method='tcp://127.0.0.1:23456', world_size=args.nprocs, rank=local_rank)
+    dist.init_process_group(backend='nccl', init_method='tcp://127.0.0.1:23456', world_size=args.nprocs, rank=local_rank) # TODO!
+    # 初始化线程组！
+    
     # create model
     if args.pretrained:
         print("=> using pre-trained model '{}'".format(args.arch))
@@ -107,12 +111,14 @@ def main_worker(local_rank, nprocs, args):
         model = models.__dict__[args.arch]()
 
     torch.cuda.set_device(local_rank)
-    model.cuda(local_rank)
+    model.cuda(local_rank) # 把模型推送到当前gpu的内存中
+    
     # When using a single GPU per process and per
     # DistributedDataParallel, we need to divide the batch size
     # ourselves based on the total number of GPUs we have
     args.batch_size = int(args.batch_size / args.nprocs)
     model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank])
+    # 数据并行
 
     # define loss function (criterion) and optimizer
     criterion = nn.CrossEntropyLoss().cuda(local_rank)
@@ -135,7 +141,7 @@ def main_worker(local_rank, nprocs, args):
     #        normalize,
     #    ]))
     train_dataset = datasets.CIFAR10(traindir, train=True, download=True, transform=transforms.Compose([transforms.ToTensor(), normalize]))
-    train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
+    train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset) # 分布式数据采样器！
     train_loader = torch.utils.data.DataLoader(train_dataset,
                                                batch_size=args.batch_size,
                                                num_workers=2,
@@ -164,7 +170,7 @@ def main_worker(local_rank, nprocs, args):
 
     for epoch in range(args.start_epoch, args.epochs):
 
-        train_sampler.set_epoch(epoch)
+        train_sampler.set_epoch(epoch) # 保证每次epoch，数据都被重新shuffle
         val_sampler.set_epoch(epoch)
 
         adjust_learning_rate(optimizer, epoch, args)
@@ -206,7 +212,7 @@ def train(train_loader, model, criterion, optimizer, epoch, local_rank, args):
         # measure data loading time
         data_time.update(time.time() - end)
 
-        images = images.cuda(local_rank, non_blocking=True)
+        images = images.cuda(local_rank, non_blocking=True) # 把当前mini-batch的x和y，推入gpu内存
         target = target.cuda(local_rank, non_blocking=True)
 
         # compute output
