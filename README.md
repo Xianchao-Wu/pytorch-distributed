@@ -293,6 +293,17 @@ python 3.multiprocessing_distributed.py.py
 
 > Apex 是 NVIDIA 开源的用于混合精度训练和分布式训练库。Apex 对混合精度训练的过程进行了封装，改两三行配置就可以进行混合精度的训练，从而大幅度降低显存占用，节约运算时间。此外，Apex 也提供了对分布式训练的封装，针对 NVIDIA 的 NCCL 通信库进行了优化。
 
+安装[Apex](https://github.com/NVIDIA/apex)槽点还是不少，相对于horovod而言，apex的安装经常被诟病。
+以我的实际经验为例，
+```
+$ git clone https://github.com/NVIDIA/apex
+$ cd apex
+$ pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./
+```
+按照官网上的上面三个命令，其实是在基于nvcc重新编译。我遇到的坑就是：nvcc的cuda版本和pytorch的cuda版本不一致！（查了半天才知道，apex除了莫名其妙的error提示，并没有帮忙精准定位这个bug):
+
+
+
 在混合精度训练上，Apex 的封装十分优雅。直接使用 amp.initialize 包装模型和优化器，apex 就会自动帮助我们管理模型参数和优化器的精度了，根据精度需求不同可以传入其他配置参数。
 
 ```
