@@ -2,12 +2,12 @@
 
 ## Take-Away
 
-注意：本代码仓库来源于：**[Here](https://github.com/tczhangzhi/pytorch-distributed)**, 这里主要是修正了若干错误并更改ImageNet为可以自动下来的CIFAR10数据集。
+注意：本代码仓库来源于：**[Here](https://github.com/tczhangzhi/pytorch-distributed)**, 这里主要是修正了若干错误并更改ImageNet为可以自动下载的CIFAR10数据集。
 1. apex使用的时候的使用class data_prefetcher的bug，去掉对data_prefetcher的使用，并更改为简单的对train_loader或者val_loader的enumerate循环；
 2. 使用horovod的时候的bug，因为horovod.pytorch的allreduce方法已经自带average，所以不需要再次除以nprocs.
 3. 增加了bash文件，用于分别运行五个并行化示例代码。
 
-笔者使用 PyTorch 编写了不同加速库在 (NO) ImageNet-> (YES) CIFAR10 上的使用示例（单机多卡），需要的同学可以当作 quickstart 将需要的部分 copy 到自己的项目中（Github 请点击下面链接）：
+笔者使用 PyTorch 编写了不同加速库在 (NO) ImageNet-> (YES) CIFAR10 上的使用示例（单机多卡，DGX-1上测试：两个配置，8卡16GB V100，以及4卡16GB V100），需要的同学可以当作 quickstart 将需要的部分 copy 到自己的项目中（Github 请点击下面链接）：
 
 1. **[nn.DataParallel ](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/1.dataparallel.py) 简单方便的 nn.DataParallel**
 2. **[torch.distributed](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/2.distributed.py) 使用 torch.distributed 加速并行训练**
@@ -23,7 +23,7 @@
 
 > DataParallel 可以帮助我们（使用单进程控）将模型和数据加载到多个 GPU 中，控制数据在 GPU 之间的流动，协同不同 GPU 上的模型进行并行训练（细粒度的方法有 scatter，gather 等等）。
 
-DataParallel 使用起来非常方便，我们只需要用 DataParallel 包装模型，再设置一些参数即可。需要定义的参数包括：参与训练的 GPU 有哪些，device_ids=gpus；用于汇总梯度的 GPU 是哪个，output_device=gpus[0] 。DataParallel 会自动帮我们将数据切分 load 到相应 GPU，将模型复制到相应 GPU，进行正向传播计算梯度并汇总：
+DataParallel 使用起来非常方便，我们只需要用 DataParallel 包装模型，再设置一些参数即可。需要定义的参数包括：参与训练的 GPU 有哪些，device_ids=gpus；用于汇总梯度的 GPU 是哪个，output_device=gpus[0] 。DataParallel 会自动帮我们将数据切分 load 到相应 GPU，将模型复制（分发）到相应 GPU，进行正向传播计算梯度并汇总：
 
 ```
 model = nn.DataParallel(model.cuda(), 
@@ -53,7 +53,7 @@ for epoch in range(100):
 汇总一下，DataParallel 并行训练部分主要与如下代码段有关：
 
 ```
-# main.py
+# 1.dataparallel.py
 import torch
 import torch.distributed as dist
 
@@ -86,7 +86,7 @@ for epoch in range(100):
 在使用时，使用 python 执行即可：
 
 ```
-python main.py
+python 1.dataparallel.py
 ```
 
 在 CIFAR10上的完整训练代码，请点击[Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/1.dataparallel.py)。
@@ -150,7 +150,7 @@ for epoch in range(100):
 汇总一下，torch.distributed 并行训练部分主要与如下代码段有关：
 
 ```
-# main.py
+# 2.distributed.py
 import torch
 import argparse
 import torch.distributed as dist
@@ -189,7 +189,7 @@ for epoch in range(100):
 在使用时，调用 torch.distributed.launch 启动器启动：
 
 ```
-CUDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.launch --nproc_per_node=4 main.py
+CUDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.launch --nproc_per_node=4 2.distributed.py
 ```
 
 在 CIFAR10 上的完整训练代码，请点击[Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/2.distributed.py)。
@@ -246,7 +246,7 @@ dist.init_process_group(backend='nccl', init_method='tcp://127.0.0.1:23456', wor
 汇总一下，添加 multiprocessing 后并行训练部分主要与如下代码段有关：
 
 ```
-# main.py
+# 3.multiprocessing_distributed.py
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
@@ -284,7 +284,7 @@ def main_worker(proc, nprocs, args):
 在使用时，直接使用 python 运行就可以了：
 
 ```
-python main.py
+python 3.multiprocessing_distributed.py.py
 ```
 
 在 CIFAR10 上的完整训练代码，请点击[Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/3.multiprocessing_distributed.py)。
@@ -308,8 +308,10 @@ from apex.parallel import DistributedDataParallel
 
 model = DistributedDataParallel(model)
 # # torch.distributed
-# model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank])
-# model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank], output_device=args.local_rank)
+# model = torch.nn.parallel.DistributedDataParallel(model, 
+#     device_ids=[args.local_rank])
+# model = torch.nn.parallel.DistributedDataParallel(model, 
+#     device_ids=[args.local_rank], output_device=args.local_rank)
 ```
 
 在正向传播计算 loss 时，Apex 需要使用 amp.scale_loss 包装，用于根据 loss 值自动对精度进行缩放：
@@ -322,7 +324,7 @@ with amp.scale_loss(loss, optimizer) as scaled_loss:
 汇总一下，Apex 的并行训练部分主要与如下代码段有关：
 
 ```
-# main.py
+# 4.apex_distributed2.py
 import torch
 import argparse
 import torch.distributed as dist
@@ -364,7 +366,7 @@ for epoch in range(100):
 在使用时，调用 torch.distributed.launch 启动器启动：
 
 ```
-UDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.launch --nproc_per_node=4 main.py
+UDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.launch --nproc_per_node=4 4.apex_distributed2.py
 ```
 
 在 CIFAR10 上的完整训练代码，请点击[Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/4.apex_distributed2.py)。
@@ -430,7 +432,7 @@ for epoch in range(100):
 汇总一下，Horovod 的并行训练部分主要与如下代码段有关：
 
 ```
-# main.py
+# 5.horovod_distributed.py
 import torch
 import horovod.torch as hvd
 
@@ -467,7 +469,7 @@ for epoch in range(100):
 在使用时，调用 horovodrun 启动器启动：
 
 ```
-CUDA_VISIBLE_DEVICES=0,1,2,3 horovodrun -np 4 -H localhost:4 --verbose python main.py
+CUDA_VISIBLE_DEVICES=0,1,2,3 horovodrun -np 4 -H localhost:4 --verbose python 5.horovod_distributed.py
 ```
 
 在 CIFAR10 上的完整训练代码，请点击[Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/5.horovod_distributed.py)。
@@ -475,7 +477,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 horovodrun -np 4 -H localhost:4 --verbose python ma
 另外，在MNIST上的完整训练代码，请点击[Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/5.2.horovod_pytorch_mnist.py)，运行这个py的bash，请点击[Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/5.2.run.mnist.sh)。
 
 
-## GPU 集群上的分布式
+## GPU 集群上的分布式 [not tested yet!]
 
 > Slurm，是一个用于 Linux 系统的免费、开源的任务调度工具。它提供了三个关键功能。第一，为用户分配资源(计算机节点)，以供用户执行工作。第二，它提供了一个框架，用于执行在节点上运行着的任务(通常是并行的任务)，第三，为任务队列合理地分配资源。如果你还没有部署 Slurm 可以按照笔者总结的[部署教程](https://zhuanlan.zhihu.com/p/149771261)进行部署。
 
@@ -584,7 +586,7 @@ def main_worker(gpu, ngpus_per_node, args):
 在使用时，调用 srun 启动任务：
 
 ```
-srun -N2 --gres gpu:1 python distributed_slurm_main.py --dist-file dist_file
+srun -N2 --gres gpu:1 python 6.distributed_slurm_main.py --dist-file dist_file
 ```
 
 在 ImageNet 上的完整训练代码，请点击[Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/6.distributed_slurm_main.py)。
@@ -618,7 +620,7 @@ srun -N2 --gres gpu:1 python distributed_slurm_main.py --dist-file dist_file
 output = model(images)
 loss = criterion(output, target)
         
-acc1, acc5 = accuracy(output, target, topk=(1, 5))
+acc1, acc5 = accuracy(output, target, topk=(1, 5)) # 对于CIFAR10，没有使用top5的结果，只有top1的结果，top5.acc=top1.acc.
 losses.update(loss.item(), images.size(0))
 top1.update(acc1.item(), images.size(0))
 top5.update(acc5.item(), images.size(0))
@@ -651,7 +653,7 @@ top5.update(acc5.item(), images.size(0))
 def reduce_mean(tensor, world_size):
     rt = tensor.clone()
     hvd.allreduce(rt, name='barrier')
-    #rt /= world_size # attention: do not /= world_size here! since allreduce already includes average!
+    #rt /= world_size # attention: do not /= world_size here for horovod/hvd! since allreduce already includes average!
     return rt
     
 output = model(images)
