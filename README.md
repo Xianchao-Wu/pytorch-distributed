@@ -400,7 +400,7 @@ for epoch in range(100):
 在使用时，调用 torch.distributed.launch 启动器启动：
 
 ```
-UDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.launch --nproc_per_node=4 4.apex_distributed2.py
+CUDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.launch --nproc_per_node=4 4.apex_distributed2.py
 ```
 
 在 CIFAR10 上的完整训练代码，请点击[Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/4.apex_distributed2.py)。
