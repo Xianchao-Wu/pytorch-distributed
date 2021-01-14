@@ -348,14 +348,14 @@ model = DistributedDataParallel(model)
 #     device_ids=[args.local_rank], output_device=args.local_rank)
 ```
 
-在正向传播计算 loss 时，Apex 需要使用 amp.scale_loss 包装，用于根据 loss 值自动对精度进行缩放：
+During forward's loss computing, Apex uses ```amp.scale_loss``` to package the loss, so that apex can use loss's value for auto-precision tuning:
 
 ```
 with amp.scale_loss(loss, optimizer) as scaled_loss:
    scaled_loss.backward()
 ```
 
-汇总一下，Apex 的并行训练部分主要与如下代码段有关：
+To conclude, Apex's parallel training is related to:
 
 ```
 # 4.apex_distributed2.py
@@ -397,21 +397,21 @@ for epoch in range(100):
       optimizer.step()
 ```
 
-在使用时，调用 torch.distributed.launch 启动器启动：
+Call ```torch.distributed.launch``` to launch the service:
 
 ```
 CUDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.launch --nproc_per_node=4 4.apex_distributed2.py
 ```
 
-在 CIFAR10 上的完整训练代码，请点击[Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/4.apex_distributed2.py)。
+For full-version of using CIFAR10, click: [Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/4.apex_distributed2.py)。
 
-## Horovod 的优雅实现
+## Horovod implementation
 
-> Horovod 是 Uber 开源的深度学习工具，它的发展吸取了 Facebook "Training ImageNet In 1 Hour" 与百度 "Ring Allreduce" 的优点，可以无痛与 PyTorch/Tensorflow 等深度学习框架结合，实现并行训练。
+> Horovod is Uber's open-source deep learning package, which developed by inspiring Facebook "Training ImageNet In 1 Hour" and baidu's "Ring Allreduce". It is easy to use by using PyTorch/Tensorflow.
 
-在 API 层面，Horovod 和 torch.distributed 十分相似。在 mpirun 的基础上，Horovod 提供了自己封装的 horovodrun 作为启动器。
+At API level, Horovod is alike ```torch.distributed```. Basing on ```mpirun```, Horovod uses its own ```horovodrun``` as the launcher.
 
-与 torch.distributed.launch 相似，我们只需要编写一份代码，horovodrun 启动器就会自动将其分配给每个进程，分别在每个 GPU 上运行。在执行过程中，启动器会将当前进程的（其实就是 GPU的）index 注入 hvd，我们可以这样获得当前进程的 index：
+Alike ```torch.distributed.launch```, we only need to write one part of code and ```horovodrun``` launcher will help us automatically assign it to each process which further run at each GPU. During executing, the launcher will transfer the current process's index (GPU's local rank) to hvd, so that we can obtain the index of current process: 
 
 ```
 import horovod.torch as hvd
@@ -419,13 +419,12 @@ import horovod.torch as hvd
 hvd.local_rank()
 ```
 
-与 init_process_group 相似，Horovod 使用 init 设置GPU 之间通信使用的后端和端口:
-
+alike ```init_process_group```, Horovod  uses ```init``` to set up GPUs' communication backend and portation:
 ```
 hvd.init()
 ```
 
-接着，使用 DistributedSampler 对数据集进行划分。如此前我们介绍的那样，它能帮助我们将每个 batch 划分成几个 partition，在当前进程中只需要获取和 rank 对应的那个 partition 进行训练：
+After, use ```DistributedSampler``` to split the dataset. As former mentioned, it helps us split each batch into partitions and each GPU will deal with one partition:
 
 ```
 train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
@@ -433,20 +432,18 @@ train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
 train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=..., sampler=train_sampler)
 ```
 
-之后，使用 broadcast_parameters 包装模型参数，将模型参数从编号为 root_rank 的 GPU 复制到所有其他 GPU 中：
+Then, use ```broadcast_parameters``` to package model's parameters, and broadcast the model's parameters from root_rank GPU to all other GPUs:
 
 ```
 hvd.broadcast_parameters(model.state_dict(), root_rank=0)
 ```
 
-然后，使用 DistributedOptimizer 包装优化器。它能帮助我们为不同 GPU 上求得的梯度进行 all reduce（即汇总不同 GPU 计算所得的梯度，并同步计算结果）。all reduce 后不同 GPU 中模型的梯度均为 all reduce 之前各 GPU 梯度的均值：
+Then use ```DistributedOptimizer``` to update the existing optimizer. Which can perform all-redue of different GPUs' gradients. After all-reduce, the GPUs' gradients are the average of the gradients of each GPU before all-reduce:
 
 ```
 hvd.DistributedOptimizer(optimizer, named_parameters=model.named_parameters(), compression=hvd.Compression.fp16)
 ```
-
-最后，把数据加载到当前 GPU 中。在编写代码时，我们只需要关注正常进行正向传播和反向传播：
-
+Finally, push the minibatch data into current GPU and then we only need to write normal forward/backward codes:
 ```
 torch.cuda.set_device(args.local_rank)
 
@@ -463,7 +460,7 @@ for epoch in range(100):
       optimizer.step()
 ```
 
-汇总一下，Horovod 的并行训练部分主要与如下代码段有关：
+To conclude, Horovod's related code are:
 
 ```
 # 5.horovod_distributed.py
@@ -500,15 +497,15 @@ for epoch in range(100):
        optimizer.step()
 ```
 
-在使用时，调用 horovodrun 启动器启动：
+At running, call the launcher ```horovodrun```:
 
 ```
 CUDA_VISIBLE_DEVICES=0,1,2,3 horovodrun -np 4 -H localhost:4 --verbose python 5.horovod_distributed.py
 ```
 
-在 CIFAR10 上的完整训练代码，请点击[Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/5.horovod_distributed.py)。
+Full code using CIFAR10 is here: [Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/5.horovod_distributed.py)。
 
-另外，在MNIST上的完整训练代码，请点击[Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/5.2.horovod_pytorch_mnist.py)，运行这个py的bash，请点击[Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/5.2.run.mnist.sh)。
+In addition, full code using MNIST is here: [Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/5.2.horovod_pytorch_mnist.py)，Click [Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/5.2.run.mnist.sh) for the bash that runs the python code.
 
 
 ## GPU 集群上的分布式 [not tested yet!]
