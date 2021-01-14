@@ -622,41 +622,41 @@ srun -N2 --gres gpu:1 python 6.distributed_slurm_main.py --dist-file dist_file
 
 在 ImageNet 上的完整训练代码，请点击[Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/6.distributed_slurm_main.py)。
 
-## 分布式 evaluation
+## distributed evaluation
 
-> all_reduce, barrier 等 API 是 distributed 中更为基础和底层的 API。这些 API 可以帮助我们控制进程之间的交互，控制 GPU 数据的传输。在自定义 GPU 协作逻辑，汇总 GPU 间少量的统计信息时，大有用处。熟练掌握这些 API 也可以帮助我们自己设计、优化分布式训练、测试流程。
+> APIs alike all_reduce, barrier are basic and fundamental in `distributed`. These APIs can help us controlling the interaction among processes and the transferring of data among GPUs. We are able to design more complicated functions based on this APIs.
 
-到目前为止，Distributed Sampler 能够帮助我们分发数据，DistributedDataParallel、hvd.broadcast_parameters 能够帮助我们分发模型，并在框架的支持下解决梯度汇总和参数更新的问题。然而，还有一些同学还有这样的疑惑，
+Until now, Distributed Sampler can help us distribute data; DistributedDataParallel and hvd.broadcast_parameters can help us distribute models and solve the problems of reducing gradients and parameter updating with the help of deep learning frameworks (such as Pytorch). Still, we may wonder the following detailed problems: 
 
-1. 训练样本被切分成了若干个部分，被若干个进程分别控制运行在若干个 GPU 上，如何在进程间进行通信汇总这些（GPU 上的）信息？
-2. 使用一张卡进行推理、测试太慢了，如何使用 Distributed 进行分布式地推理和测试，并将结果汇总在一起？
+1. training samples are separated into partations and controlled by processes in different GPUs, then how can we communicate and conclude these GPUs' information?
+2. it is too slow to use a simple card for inferencing, thus, how can we use distributed to perform inferencing and predicting in a distributed way and finally all-reduce the results?
 3. ......
 
-要解决这些问题，我们缺少一个更为基础的 API，**汇总记录不同 GPU 上生成的准确率、损失函数等指标信息**。这个 API 就是 `torch.distributed.all_reduce`。示意图如下：
+We will need another basic API to answer these questions，**conclude the accuracies and losses of different GPUs**. This API is `torch.distributed.all_reduce`, for example:
 
 ![img](https://pic4.zhimg.com/80/v2-f424bdc8108abd5421e3af3b902b2ccf_720w.jpg)
 
-具体来说，它的工作过程包含以下三步：
+It's working include several steps:
 
-1. 通过调用 `all_reduce(tensor, op=...)`，当前进程会向其他进程发送 `tensor`（例如 rank 0 会发送 rank 0 的 tensor 到 rank 1、2、3）
-2. 接受其他进程发来的 `tensor`（例如 rank 0 会接收 rank 1 的 tensor、rank 2 的 tensor、rank 3 的 tensor）。
-3. 在全部接收完成后，当前进程（例如rank 0）会对当前进程的和接收到的 `tensor` （例如 rank 0 的 tensor、rank 1 的 tensor、rank 2 的 tensor、rank 3 的 tensor）进行 `op` （例如求和）操作。
+1. when calling `all_reduce(tensor, op=...)`, current process will send `tensor` to another processes, (such as rank 0 will send rank 0's tensor to rank 1、2、3);
+2. current process accepts `tensor` from other processes (such as rank 0 will accept rank 1's tensor, rank 2's tensor, rank 3's tensor).
+3. after all the acceptations are done, current process (such as rank 0) with perform `op` operation to all the received tensors with its own tensor (rank 0/1/2/3's tensors with an operation alike sum).
 
-使用 `torch.distributed.all_reduce(loss, op=torch.distributed.reduce_op.SUM)`，我们就能够对不数据切片（不同 GPU 上的训练数据）的损失函数进行求和了。接着，我们只要再将其除以进程（GPU）数量 `world_size`就可以得到损失函数的平均值。
+Through using `torch.distributed.all_reduce(loss, op=torch.distributed.reduce_op.SUM)`, we can obtain the loss function's value as an unit. Then, we can divide the sum-up by the number of processes (= number of GPUs) to obtain the average value.
 
-正确率也能够通过同样方法进行计算：
+Accuracy can be computed in a similar way:
 
 ```
-# 原始代码
+# Original code:
 output = model(images)
 loss = criterion(output, target)
         
-acc1, acc5 = accuracy(output, target, topk=(1, 5)) # 对于CIFAR10，没有使用top5的结果，只有top1的结果，top5.acc=top1.acc.
+acc1, acc5 = accuracy(output, target, topk=(1, 5)) # for CIFAR10，top5.acc=top1.acc.
 losses.update(loss.item(), images.size(0))
 top1.update(acc1.item(), images.size(0))
 top5.update(acc5.item(), images.size(0))
 ​
-# 修改后，同步各 GPU 中数据切片的统计信息，用于分布式的 evaluation
+# sync the results of different GPUs' data partation for distributed evaluation:
 def reduce_tensor(tensor):
     rt = tensor.clone()
     dist.all_reduce(rt, op=dist.reduce_op.SUM)
@@ -678,7 +678,7 @@ top1.update(acc1.item(), images.size(0))
 top5.update(acc5.item(), images.size(0))
 ```
 
-值得注意的是，为了同步各进程的计算进度，我们在 reduce 之前插入了一个同步 API `torch.distributed.barrier()`。在所有进程运行到这一步之前，先完成此前代码的进程会等待其他进程。这使得我们能够得到准确、有序的输出。在 Horovod 中，我们无法使用 `torch.distributed.barrier()`，取而代之的是，我们可以在 allreduce 过程中指明：
+Note that, in order to sync the computing progress of each process, we introduce a sync point API `torch.distributed.barrier()` before ```reduce```. Early finished processes will wait here for other not-finished processes. This ensure us obtain the correct and ordered outputs. However, in Horovod, we can not use `torch.distributed.barrier()`, we can point out this in horovod's allreduce method: 
 
 ```
 def reduce_mean(tensor, world_size):
