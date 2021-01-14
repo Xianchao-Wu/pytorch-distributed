@@ -4,41 +4,39 @@
 
 Note: The code mainly comes from：**[Here](https://github.com/tczhangzhi/pytorch-distributed)**, I fixed some bugs here and changed the dataset from ImageNet to CIFAR10 which can be easily downloaded:
 1. fix the bug of apex when using ```class data_prefetcher```，remove the usage of ```data_prefetcher```，and changed to a easilier enumerate loop of using ```train_loader``` or ```val_loader```；
-2. fix a bug of using horovod's all-reduce，since horovod.pytorch's allreduce method already includes average，it is not necessary to devidied by ```nprocs``` again.
-3. 增加了bash文件，用于分别运行五个并行化示例代码。
+2. fix a bug of using horovod's all-reduce，since horovod.pytorch's ```allreduce``` method already includes average，it is not necessary to devidied by ```nprocs``` again.
+3. added bash files，to easily run the py programs.
 
-笔者使用 PyTorch 编写了不同加速库在 (NO) ImageNet-> (YES) CIFAR10 上的使用示例（单机多卡，DGX-1上测试：两个配置，8卡16GB V100，以及4卡16GB V100），需要的同学可以当作 quickstart 将需要的部分 copy 到自己的项目中（Github 请点击下面链接）：
+Tested under PyTorch, CIFAR10, NVIDIA DGX-1 with two configurations, 8 cards of 16GB V100, and 4cards of 16GB V100:
 
-1. **[nn.DataParallel ](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/1.dataparallel.py) 简单方便的 nn.DataParallel**
-2. **[torch.distributed](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/2.distributed.py) 使用 torch.distributed 加速并行训练**
-3. **[torch.multiprocessing](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/3.multiprocessing_distributed.py) 使用 torch.multiprocessing 取代启动器**
-4. **[apex](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/4.apex_distributed2.py) 使用 apex （fp16半精度）再加速**
-5. **[horovod](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/5.horovod_distributed.py)** **horovod 的优雅实现**
-6. **[slurm](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/6.distributed_slurm_main.py) GPU 集群上的分布式（Not Tested Yet! 2021/Jan/13）**
-7. **补充：分布式 [evaluation](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/2.distributed.py)**
+1. **[nn.DataParallel ](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/1.dataparallel.py) simple nn.DataParallel**
+2. **[torch.distributed](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/2.distributed.py) using torch.distributed to speedup parallel training/inferencing**
+3. **[torch.multiprocessing](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/3.multiprocessing_distributed.py) use torch.multiprocessing to replace the launcher from command line**
+4. **[apex](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/4.apex_distributed2.py) use apex （fp16）to speedup further**
+5. **[horovod](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/5.horovod_distributed.py)** **horovod implementation**
+6. **[slurm](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/6.distributed_slurm_main.py) GPU cluster（Not Tested Yet! 2021/Jan/13）**
+7. **append：distributed [evaluation](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/2.distributed.py)**
 
-简要记录一下不同库的分布式训练方式：
+## 1. simple torch.nn.DataParallel
 
-## 简单方便的 torch.nn.DataParallel
+> DataParallel can help us（single-process control）pushing model and data into multiple GPUs，controlling data movements among GPUs，and cooperate GPUs' parallel training.
 
-> DataParallel 可以帮助我们（使用单进程控）将模型和数据加载到多个 GPU 中，控制数据在 GPU 之间的流动，协同不同 GPU 上的模型进行并行训练（细粒度的方法有 scatter，gather 等等）。
-
-DataParallel 使用起来非常方便，我们只需要用 DataParallel 包装模型，再设置一些参数即可。需要定义的参数包括：参与训练的 GPU 有哪些，device_ids=gpus；用于汇总梯度的 GPU 是哪个，output_device=gpus[0] 。DataParallel 会自动帮我们将数据切分 load 到相应 GPU，将模型复制（分发）到相应 GPU，进行正向传播计算梯度并汇总：
+DataParallel is easy to use，we just need to include our model by DataParallel，and then set some parameters. The parameters include: available GPUs, device_ids=gpus; which GPU is used for reducing gradients，output_device=gpus[0]. DataParallel will help us cutting data into pieces and then loading to respective GPU，deliver model to GPU，forward and backward computing:
 
 ```
 model = nn.DataParallel(model.cuda(), 
    device_ids=gpus, output_device=gpus[0])
 ```
 
-值得注意的是，模型和数据都需要先 load 进 GPU 中，DataParallel 的 module 才能对其进行处理，否则会报错：
+Note that modle and data are requried to be loaded into GPU first，and then ```DataParallel``` 's module can process them (model + data):
 
 ```
-# 这里要 model.cuda()
+# need model.cuda()
 model = nn.DataParallel(model.cuda(), device_ids=gpus, output_device=gpus[0])
 
 for epoch in range(100):
    for batch_idx, (data, target) in enumerate(train_loader):
-      # 这里要 images/target.cuda()
+      # need images/target.cuda()
       images = images.cuda(non_blocking=True)
       target = target.cuda(non_blocking=True)
       ...
@@ -50,7 +48,7 @@ for epoch in range(100):
       optimizer.step()
 ```
 
-汇总一下，DataParallel 并行训练部分主要与如下代码段有关：
+To conclude, DataParallel's parallel training requires the following code:
 
 ```
 # 1.dataparallel.py
@@ -83,21 +81,21 @@ for epoch in range(100):
       optimizer.step()
 ```
 
-在使用时，使用 python 执行即可：
+When using, use python to execute：
 
 ```
 python 1.dataparallel.py
 ```
 
-在 CIFAR10上的完整训练代码，请点击[Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/1.dataparallel.py)。
+Complete code using CIFAR10, click [Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/1.dataparallel.py)。
 
-## 使用 torch.distributed 加速并行训练
+## 2. use torch.distributed for parallel training
 
-> 在 pytorch 1.0 之后，官方终于对分布式的常用方法进行了封装，支持 all-reduce，broadcast，send 和 receive 等等。通过 MPI 实现 CPU 通信，通过 NCCL 实现 GPU 通信。官方也曾经提到用 DistributedDataParallel 解决 DataParallel 速度慢，GPU 负载不均衡的问题，目前已经很成熟了～
+> after pytorch 1.0, the official version supports: all-reduce，broadcast，send, and receive. MPI is used for CPU communication and NCCL for GPU communication. 
 
-与 DataParallel 的单进程控制多 GPU 不同，在 distributed 的帮助下，我们只需要编写一份代码，torch 就会自动将其分配给每个进程，分别在每个 GPU 上运行。
+Different with ```DataParallel``` 's single-process controlling multiple GPUs, under ```distributed```, we just need to write one code and torch will help us arranging it to multi-GPUs.
 
-在 API 层面，pytorch 为我们提供了 torch.distributed.launch 启动器，用于在命令行分布式地执行 python 文件。在执行过程中，启动器会将当前进程的（其实就是 GPU的）index 通过参数传递给 python，我们可以这样获得当前进程的 index：
+At API level, pytorch supplies us ```torch.distributed.launch``` as the launcher，to run python code from command lines (linux). During running, the launcher will send the current process's index (aka gpu rank/index, ```local_rank```) to python, so that we can obtain the index of current process:
 
 ```
 parser = argparse.ArgumentParser()
@@ -107,13 +105,13 @@ args = parser.parse_args()
 print(args.local_rank)
 ```
 
-接着，使用 init_process_group 设置GPU 之间通信使用的后端和端口：
+Then, we use ```init_process_group``` to set the backend and port of GPUs' communications:
 
 ```
 dist.init_process_group(backend='nccl')
 ```
 
-之后，使用 DistributedSampler 对数据集进行划分。如此前我们介绍的那样，它能帮助我们将每个 batch 划分成几个 partition，在当前进程中只需要获取和 rank 对应的那个 partition 进行训练：
+After that, ```DistributedSampler``` is used to split the dataset and perform distributed sampling. It will split a batch into several partitions. At current process, we only need to obtain the local_rank and the corresponding partition for training: 
 
 ```
 train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
@@ -121,13 +119,13 @@ train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
 train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=..., sampler=train_sampler)
 ```
 
-然后，使用 DistributedDataParallel 包装模型，它能帮助我们为不同 GPU 上求得的梯度进行 all reduce（即汇总不同 GPU 计算所得的梯度，并同步计算结果）。all reduce 后不同 GPU 中模型的梯度均为 all reduce 之前各 GPU 梯度的均值：
+Then, we can use ```DistributedDataParallel``` to update the model which can perform all-reduce among different GPUs' gradients. After all reduce, the gradients of GPUs are the average value of the gradients of GPUs before all-reduce：
 
 ```
 model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank])
 ```
 
-最后，把数据和模型加载到当前进程使用的 GPU 中，正常进行正反向传播：
+Finally, push the model and data into current GPU, for forward and backward computing:
 
 ```
 torch.cuda.set_device(args.local_rank)
@@ -147,7 +145,7 @@ for epoch in range(100):
       optimizer.step()
 ```
 
-汇总一下，torch.distributed 并行训练部分主要与如下代码段有关：
+To conclude, ```torch.distributed``` parallel training code:
 
 ```
 # 2.distributed.py
@@ -186,19 +184,17 @@ for epoch in range(100):
       optimizer.step()
 ```
 
-在使用时，调用 torch.distributed.launch 启动器启动：
+Call ```torch.distributed.launch``` to start-up the code (from command line):
 
 ```
 CUDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.launch --nproc_per_node=4 2.distributed.py
 ```
 
-在 CIFAR10 上的完整训练代码，请点击[Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/2.distributed.py)。
+For full-version code under CIFAR10, click [Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/2.distributed.py)。
 
-## 使用 torch.multiprocessing 取代启动器
+## 3. Use torch.multiprocessing to replace ```torch.distributed.launch```
 
-> 有的同学可能比较熟悉 torch.multiprocessing，也可以手动使用 torch.multiprocessing 进行多进程控制。绕开 torch.distributed.launch 自动控制开启和退出进程的一些小毛病～
-
-使用时，只需要调用 torch.multiprocessing.spawn，torch.multiprocessing 就会帮助我们自动创建进程。如下面的代码所示，spawn 开启了 nprocs=4 个进程，每个进程执行 main_worker 并向其中传入 local_rank（当前进程 index）和 args（即 4 和 myargs）作为参数：
+We just need to call ```torch.multiprocessing.spawn```，```torch.multiprocessing``` will then help us automatically create processes, alike the following code. Below, ```spawn``` started nprocs=4 processes, each process will execute ```main_worker``` and took ```local_rank``` (current process's index = GPU's local rank) and args (i.e., 4 and myargs) as parameters:
 
 ```
 import torch.multiprocessing as mp
@@ -206,7 +202,7 @@ import torch.multiprocessing as mp
 mp.spawn(main_worker, nprocs=4, args=(4, myargs))
 ```
 
-这里，我们直接将原本需要 torch.distributed.launch 管理的执行内容，封装进 main_worker 函数中，其中 proc 对应 local_rank（当前进程 index），进程数 nproc 对应 4， args 对应 myargs：
+Here, the content that was managed by ```torch.distributed.launch``` are now at ```main_worker``` function, where proc = local_rank, and number-of-process nproc = 4， args = myargs:
 
 ```
 def main_worker(proc, nproc, args):
@@ -237,13 +233,13 @@ def main_worker(proc, nproc, args):
           optimizer.step()
 ```
 
-在上面的代码中值得注意的是，由于没有 torch.distributed.launch 读取的默认环境变量作为配置，我们需要手动为 init_process_group 指定参数：
+Note that there is no default environment values that ```torch.distributed.launch``` helped us reading, we need to manually set parameter values for ```init_process_group```:
 
 ```
 dist.init_process_group(backend='nccl', init_method='tcp://127.0.0.1:23456', world_size=4, rank=gpu)
 ```
 
-汇总一下，添加 multiprocessing 后并行训练部分主要与如下代码段有关：
+To conclude, after importing ```multiprocessing```, the related parallel training code are:
 
 ```
 # 3.multiprocessing_distributed.py
@@ -281,28 +277,29 @@ def main_worker(proc, nprocs, args):
           optimizer.step()
 ```
 
-在使用时，直接使用 python 运行就可以了：
+For using, a simple python is enough:
 
 ```
 python 3.multiprocessing_distributed.py.py
 ```
 
-在 CIFAR10 上的完整训练代码，请点击[Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/3.multiprocessing_distributed.py)。
+Complete code using CIFAR10, click [Github](https://github.com/Xianchao-Wu/pytorch-distributed/blob/master/3.multiprocessing_distributed.py)。
 
-## 使用 Apex 再加速
+## Using Apex to further speed-up
 
-> Apex 是 NVIDIA 开源的用于混合精度训练和分布式训练库。Apex 对混合精度训练的过程进行了封装，改两三行配置就可以进行混合精度的训练，从而大幅度降低显存占用，节约运算时间。此外，Apex 也提供了对分布式训练的封装，针对 NVIDIA 的 NCCL 通信库进行了优化。
+> Apex is NVIDIA's open-source mixed-precision (fp32 and fp16) and distributed training lib. Apex is easy to be used with several lines' changing is enough. Also, Apex inlcudes code for distributed training, optimized for NVIDIA's NCCL communication protocol. 
 
-安装[Apex](https://github.com/NVIDIA/apex)槽点还是不少，相对于horovod而言，apex的安装经常被诟病。
-以我的实际经验为例，
+Still it is not that easy to install [Apex](https://github.com/NVIDIA/apex), compared with horovod.
+
+I faced bugs even during my installing of Apex:
 ```
 $ git clone https://github.com/NVIDIA/apex
 $ cd apex
 $ pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./
 ```
-按照官网上的上面三个命令，其实是在基于nvcc重新编译。我遇到的坑就是：nvcc的cuda版本和pytorch的cuda版本不一致！（查了半天才知道，apex除了莫名其妙的error提示，并没有帮忙精准定位这个bug):
+NVCC is actually used for re-compiling. The bug that I faced was: nvcc's cuda version is different with pytorch's cuda! (cost time for finding this bug):
 
-查看nvcc的cuda版本：
+check nvcc's cuda version:
 ```
 nvcc --v
 ersion
@@ -311,7 +308,8 @@ Copyright (c) 2005-2019 NVIDIA Corporation
 Built on Sun_Jul_28_19:07:16_PDT_2019
 Cuda compilation tools, release 10.1, V10.1.243
 ```
-查看pytorch的cuda版本：
+
+check pytorch's cuda:
 ```
 python
 Python 3.6.12 |Anaconda, Inc.| (default, Sep  8 2020, 23:10:56)
@@ -321,7 +319,9 @@ Type "help", "copyright", "credits" or "license" for more information.
 >>> torch.version.cuda
 '10.1'
 ```
-可以看到，目前两者都是10.1，安装apex0.1版本成功(2021/Jan/12)。另外一个事情是，cuda分成两个api，一个是运行时支持compile的，版本10.1.243，另外，如果使用nvidia-smi，看到的可能是>=10.1的版本(例如CUDA11)，这第二个是驱动GPU的，只要保证版本>= nvcc的版本即可。
+Since both are 10.1, I finally finished installing apex0.1 (2021/Jan/12). Before, I used pytorch with cuda11 and failed...
+
+Another thing is that cuda is separated into two apis, one is running time support compile,  version 10.1.243. Another is that if use ```nvidia-smi``` you may see version 11.0>=10.1 (CUDA11)，the second CUDA11 is for driving GPU. It will be fine if we only ensure that nvidia-smi's cuda version >= nvcc's version.
 
 当nvcc和pytorch的cuda版本不一致的时候，一则可以新安装cuda并修改nvcc的版本，二则可以在[pytorch安装界面](https://pytorch.org/get-started/locally/)，寻找和nvcc的版本一致的安装命令，reinstall pytorch(更简单一些）。
 
