@@ -14,12 +14,12 @@ import torch.optim
 import torch.multiprocessing as mp
 import torch.utils.data
 import torch.utils.data.distributed
-import torchvision.transforms as transforms
+import torchvision.transforms as transforms 
 import torchvision.datasets as datasets
 import torchvision.models as models
 
 from apex import amp
-from apex.parallel import DistributedDataParallel
+from apex.parallel import DistributedDataParallel # 其1，导入库函数
 
 model_names = sorted(name for name in models.__dict__
                      if name.islower() and not name.startswith("__") and callable(models.__dict__[name]))
@@ -56,7 +56,7 @@ parser.add_argument('--lr',
                     help='initial learning rate',
                     dest='lr')
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M', help='momentum')
-parser.add_argument('--local_rank', default=-1, type=int, help='node rank for distributed training')
+parser.add_argument('--local_rank', default=-1, type=int, help='node rank for distributed training') # 其二，指定当前线程名
 parser.add_argument('--wd',
                     '--weight-decay',
                     default=1e-4,
@@ -74,7 +74,7 @@ def reduce_mean(tensor, nprocs):
     rt = tensor.clone()
     dist.all_reduce(rt, op=dist.ReduceOp.SUM)
     rt /= nprocs
-    return rt
+    return rt # 其三，调用torch中的distributed来管理loss和accuracy的all reduce
 
 
 class data_prefetcher(): # TODO do not use this class, something is wrong!
@@ -147,13 +147,13 @@ def main():
                       'You may see unexpected behavior when restarting '
                       'from checkpoints.')
 
-    main_worker(args.local_rank, args.nprocs, args)
+    main_worker(args.local_rank, args.nprocs, args) # 其四，根据传入的 local rank来调用main worker
 
 
 def main_worker(local_rank, nprocs, args):
     best_acc1 = .0
 
-    dist.init_process_group(backend='nccl')
+    dist.init_process_group(backend='nccl') # 其五，初始化线程组，根据nccl通讯协议
     # create model
     if args.pretrained:
         print("=> using pre-trained model '{}'".format(args.arch))
@@ -162,8 +162,8 @@ def main_worker(local_rank, nprocs, args):
         print("=> creating model '{}'".format(args.arch))
         model = models.__dict__[args.arch]()
 
-    torch.cuda.set_device(local_rank)
-    model.cuda()
+    torch.cuda.set_device(local_rank)# 重要，指定当前缺省的gpu = current working gpu
+    model.cuda() # 其六，根据local tank 把当前的模型放入local rank所在的gpu
     # When using a single GPU per process and per
     # DistributedDataParallel, we need to divide the batch size
     # ourselves based on the total number of GPUs we have
@@ -174,8 +174,8 @@ def main_worker(local_rank, nprocs, args):
 
     optimizer = torch.optim.SGD(model.parameters(), args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
-    model, optimizer = amp.initialize(model, optimizer)
-    model = DistributedDataParallel(model)
+    model, optimizer = amp.initialize(model, optimizer) # 其七，对模型和优化器进行封装，初始化
+    model = DistributedDataParallel(model) # 其八，对model进行数据并行化封装
 
     cudnn.benchmark = True
 
@@ -194,14 +194,14 @@ def main_worker(local_rank, nprocs, args):
     #    ]))
     
     train_dataset = datasets.CIFAR10(traindir, train=True, download=True, transform=transforms.Compose([transforms.ToTensor(), normalize]))
-    train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
+    train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset) #其九，分布式数据采样器
 
     train_loader = torch.utils.data.DataLoader(train_dataset,
                                                batch_size=args.batch_size,
                                                shuffle=(train_sampler is None),
                                                num_workers=2,
                                                pin_memory=True,
-                                               sampler=train_sampler)
+                                               sampler=train_sampler) # 使用分布式数据采样器，训练数据集合
 
     val_dataset = datasets.CIFAR10(valdir, train=False, download=True, transform=transforms.Compose([transforms.ToTensor(), normalize]))
     val_sampler = torch.utils.data.distributed.DistributedSampler(val_dataset)
@@ -217,7 +217,7 @@ def main_worker(local_rank, nprocs, args):
 
     for epoch in range(args.start_epoch, args.epochs):
         train_sampler.set_epoch(epoch) # 从而每次epoch的时候，数据重新被shuffle
-        val_sampler.set_epoch(epoch)
+        val_sampler.set_epoch(epoch) # 其十，设置每次epoch开始的时候都重新shuf
 
         adjust_learning_rate(optimizer, epoch, args)
 
@@ -262,7 +262,7 @@ def train(train_loader, model, criterion, optimizer, epoch, local_rank, args):
         # measure data loading time
         data_time.update(time.time() - end)
         images = images.cuda(local_rank, non_blocking=True)
-        target = target.cuda(local_rank, non_blocking=True)
+        target = target.cuda(local_rank, non_blocking=True) # 其十一，把mini batch放入当前local rank的gpu
 
         # compute output
         output = model(images)
@@ -271,11 +271,11 @@ def train(train_loader, model, criterion, optimizer, epoch, local_rank, args):
         # measure accuracy and record loss
         acc1, acc5 = accuracy(output, target, local_rank, topk=(1, 5))
 
-        torch.distributed.barrier() # 同步点
+        torch.distributed.barrier() # 同步点，其十二，同步点，为的是使用all reduce做准备
 
         reduced_loss = reduce_mean(loss, args.nprocs)
         reduced_acc1 = reduce_mean(acc1, args.nprocs)
-        reduced_acc5 = reduce_mean(acc5, args.nprocs)
+        reduced_acc5 = reduce_mean(acc5, args.nprocs) #其十三，对loss和acc进行规约reduce
 
         losses.update(reduced_loss.item(), images.size(0))
         top1.update(reduced_acc1.item(), images.size(0))
@@ -283,7 +283,7 @@ def train(train_loader, model, criterion, optimizer, epoch, local_rank, args):
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
-        with amp.scale_loss(loss, optimizer) as scaled_loss:
+        with amp.scale_loss(loss, optimizer) as scaled_loss: #其十四，对loss进行封装，混合精度反向传播
             scaled_loss.backward()
         optimizer.step()
 
