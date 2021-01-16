@@ -19,7 +19,7 @@ import torchvision.datasets as datasets
 import torchvision.models as models
 
 from apex import amp
-from apex.parallel import DistributedDataParallel # 其1，导入库函数
+from apex.parallel import DistributedDataParallel # 其1，导入库函数  和apex相关，重要
 
 model_names = sorted(name for name in models.__dict__
                      if name.islower() and not name.startswith("__") and callable(models.__dict__[name]))
@@ -174,8 +174,11 @@ def main_worker(local_rank, nprocs, args):
 
     optimizer = torch.optim.SGD(model.parameters(), args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
-    model, optimizer = amp.initialize(model, optimizer) # 其七，对模型和优化器进行封装，初始化
-    model = DistributedDataParallel(model) # 其八，对model进行数据并行化封装
+    model, optimizer = amp.initialize(model, optimizer) # 其七，对模型和优化器进行封装，初始化。和apex相关
+    model = DistributedDataParallel(model) # 其八，对model进行数据并行化封装。和apex相关
+    #from apex import amp
+    #from apex.parallel import DistributedDataParallel
+    
 
     cudnn.benchmark = True
 
@@ -283,9 +286,11 @@ def train(train_loader, model, criterion, optimizer, epoch, local_rank, args):
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
-        with amp.scale_loss(loss, optimizer) as scaled_loss: #其十四，对loss进行封装，混合精度反向传播
+        with amp.scale_loss(loss, optimizer) as scaled_loss: #其十四，对loss进行封装，混合精度反向传播。和apex相关
             scaled_loss.backward()
         optimizer.step()
+        #from apex import amp
+        #from apex.parallel import DistributedDataParallel
 
         # measure elapsed time
         batch_time.update(time.time() - end)
